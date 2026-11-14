@@ -218,3 +218,21 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# AI development / Matt Pocock skills
+.agents/
+.claude/
+skills-lock.json
+AGENTS.md
+CLAUDE.md
+docs/agents/
+.scratch/
+
+# Teaching workspace (/teach): lessons, cheat sheets, notes
+/MISSION.md
+/NOTES.md
+/RESOURCES.md
+/assets/
+/lessons/
+/reference/
+/learning-records/
