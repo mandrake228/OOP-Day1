@@ -56,6 +56,8 @@ class AbstractAccount(ABC):
 class BankAccount(AbstractAccount):
     """Обычный банковский счёт. Проверяет всё, что ему передают."""
 
+    WITHDRAWAL_LIMIT = Decimal("100000.00")  # больше за одно снятие нельзя
+
     def __init__(
         self,
         owner,
@@ -143,6 +145,17 @@ class BankAccount(AbstractAccount):
                 f"Счёт {self._masked_id()} закрыт: операции больше невозможны."
             )
 
+    def _start_withdrawal(self, amount):
+        """Общее начало любого снятия: проверяет сумму, статус и лимит."""
+        value = self._validate_amount(amount, f"Снятие со счёта {self._masked_id()}")
+        self._check_status()
+        if value > self.WITHDRAWAL_LIMIT:
+            raise InvalidOperationError(
+                f"Снятие со счёта {self._masked_id()}: сумма {value} больше "
+                f"лимита на одно снятие {self.WITHDRAWAL_LIMIT} {self._currency}."
+            )
+        return value
+
     def deposit(self, amount):
         value = self._validate_amount(amount, f"Пополнение счёта {self._masked_id()}")
         self._check_status()
@@ -150,8 +163,7 @@ class BankAccount(AbstractAccount):
         return self._balance
 
     def withdraw(self, amount):
-        value = self._validate_amount(amount, f"Снятие со счёта {self._masked_id()}")
-        self._check_status()
+        value = self._start_withdrawal(amount)
         if value > self._balance:
             raise InsufficientFundsError(
                 f"Счёт {self._masked_id()}: недостаточно средств. "
