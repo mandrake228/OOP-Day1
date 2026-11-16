@@ -26,3 +26,23 @@ class AssetType(StrEnum):
 class ClientStatus(StrEnum):
     ACTIVE = "active"  # клиент может входить и получать счета
     BLOCKED = "blocked"  # заблокирован после трёх неверных паролей подряд
+
+
+class TransactionType(StrEnum):
+    DEPOSIT = "deposit"  # пополнение: деньги приходят в банк
+    WITHDRAWAL = "withdrawal"  # снятие: деньги уходят из банка
+    TRANSFER = "transfer"  # перевод между счетами этого банка
+    EXTERNAL_TRANSFER = "external_transfer"  # перевод на счёт в другом банке
+
+
+class TransactionStatus(StrEnum):
+    PENDING = "pending"  # ожидает исполнения
+    COMPLETED = "completed"  # выполнена
+    FAILED = "failed"  # отклонена: у неё есть причина отказа
+    CANCELLED = "cancelled"  # отменена до исполнения
+
+
+class Priority(StrEnum):
+    HIGH = "high"  # порядок строк здесь — это порядок обслуживания в очереди
+    NORMAL = "normal"
+    LOW = "low"

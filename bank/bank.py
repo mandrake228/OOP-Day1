@@ -244,3 +244,15 @@ class Bank:
         for place, row in enumerate(ranking, start=1):
             row["place"] = place
         return ranking
+
+    def now(self):
+        """Текущее время по часам банка."""
+        return self._clock()
+
+    def has_account(self, account_id):
+        """Отвечает, есть ли в банке счёт с таким номером."""
+        return isinstance(account_id, str) and account_id in self._accounts
+
+    def get_account(self, account_id):
+        """Возвращает счёт по номеру или сообщает, что такого нет."""
+        return self._find_account(account_id)
