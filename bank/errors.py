@@ -19,3 +19,15 @@ class InvalidOperationError(AccountError):
 
 class InsufficientFundsError(AccountError):
     """На счёте меньше денег, чем просят снять."""
+
+
+class AuthenticationError(AccountError):
+    """Вход не удался: неверный ID клиента или пароль."""
+
+
+class ClientBlockedError(AccountError):
+    """Клиент заблокирован: вход и операции по его просьбе запрещены."""
+
+
+class NightOperationError(AccountError):
+    """Ночные часы: банк не выполняет операции."""

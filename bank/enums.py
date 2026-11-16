@@ -21,3 +21,8 @@ class AssetType(StrEnum):
     STOCKS = "stocks"  # акции
     BONDS = "bonds"  # облигации
     ETF = "etf"  # биржевые фонды
+
+
+class ClientStatus(StrEnum):
+    ACTIVE = "active"  # клиент может входить и получать счета
+    BLOCKED = "blocked"  # заблокирован после трёх неверных паролей подряд

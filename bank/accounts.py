@@ -173,6 +173,33 @@ class BankAccount(AbstractAccount):
         self._balance -= value
         return self._balance
 
+    def freeze(self):
+        """Замораживает активный счёт и возвращает новый статус."""
+        self._check_status()  # замороженный и закрытый счёт откажут сами
+        self._status = AccountStatus.FROZEN
+        return self._status
+
+    def unfreeze(self):
+        """Размораживает счёт и возвращает новый статус."""
+        if self._status is not AccountStatus.FROZEN:
+            self._check_status()  # закрытый счёт откажет здесь своей ошибкой
+            raise InvalidOperationError(
+                f"Счёт {self._masked_id()} не заморожен: размораживать нечего."
+            )
+        self._status = AccountStatus.ACTIVE
+        return self._status
+
+    def close(self):
+        """Закрывает активный счёт навсегда. Деньги при этом не двигаются."""
+        self._check_status()
+        if self._balance < 0:
+            raise InvalidOperationError(
+                f"Счёт {self._masked_id()} нельзя закрыть: на нём долг "
+                f"{-self._balance} {self._currency}."
+            )
+        self._status = AccountStatus.CLOSED
+        return self._status
+
     def get_account_info(self):
         return {
             "account_type": type(self).__name__,
