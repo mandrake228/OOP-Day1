@@ -256,3 +256,9 @@ class Bank:
     def get_account(self, account_id):
         """Возвращает счёт по номеру или сообщает, что такого нет."""
         return self._find_account(account_id)
+
+    def check_operation_time(self, action, account_id=None):
+        """Ночью отказывает в операции со счётом и помечает попытку. Днём молчит."""
+        if not isinstance(action, str) or not action.strip():
+            raise InvalidOperationError("Проверка времени: нужно название операции.")
+        self._check_time(action, self._owner_of(account_id), account_id)

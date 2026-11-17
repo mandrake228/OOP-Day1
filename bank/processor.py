@@ -105,6 +105,9 @@ class TransactionProcessor:
 
     def _execute(self, transaction):
         """Двигает деньги по счетам и возвращает комиссию. При отказе — ошибка."""
+        # время проверяет банк: ночью он откажет и сам пометит попытку
+        account_id = transaction.sender or transaction.recipient
+        self._bank.check_operation_time(transaction.transaction_type.value, account_id)
         sender = recipient = debit = credit = None
         if transaction.sender is not None:
             sender = self._find(transaction.sender, "отправителя")

@@ -10,6 +10,7 @@ from bank import (
     Bank,
     InsufficientFundsError,
     InvalidOperationError,
+    NightOperationError,
     PremiumAccount,
     Priority,
     SavingsAccount,
@@ -539,6 +540,79 @@ def show_errors():
     check("ошибки вызова в журнал не попали", len(processor.get_errors()) == 4)
 
 
+def show_night():
+    section("8. Ночной запрет")
+    stand = Stand()
+    bank, queue, processor = stand.bank, stand.queue, stand.processor
+    make, clock, balance = stand.make, stand.clock, stand.balance
+
+    clock.set(23, 59, 59)
+    evening = make(1, "transfer", 100, sender=A1, recipient=L1)
+    processor.process(evening)
+    check("23:59:59 — перевод проходит", evening.status == "completed")
+    clock.set(0, 0)
+    midnight = make(2, "transfer", 100, sender=A1, recipient=L1)
+    expect_refusal("00:00:00 — перевод", NightOperationError, processor, midnight)
+
+    clock.set(2, 30)
+    lost = "00000000"  # такого счёта в банке нет
+    night = [
+        ("пополнение", "deposit", {"recipient": A1}),
+        ("снятие", "withdrawal", {"sender": A1}),
+        ("перевод", "transfer", {"sender": P1, "recipient": A1}),
+        ("внешний перевод", "external_transfer", {"sender": L1, "recipient": OUTSIDE}),
+        ("перевод на неизвестный счёт", "transfer", {"sender": A1, "recipient": lost}),
+    ]
+    refused = []
+    for number, (description, kind, fields) in enumerate(night, start=3):
+        transaction = make(number, kind, 500, **fields)
+        expect_refusal(f"02:30 — {description}", NightOperationError,
+                       processor, transaction)
+        refused.append(transaction)
+    at_once = all(
+        (transaction.status, transaction.attempts) == ("failed", 1)
+        for transaction in refused
+    )
+    check("ночной отказ окончательный: отклонены с первой попытки", at_once)
+    balances = [str(balance(name)) for name in (A1, P1, L1)]
+    check("ночью деньги не двигались", balances == ["9900.00", "1000.00", "20100.00"])
+
+    print("  Очередь ночью")
+    ready = make(8, "deposit", 100, recipient=A1)
+    morning = make(9, "deposit", 100, recipient=A1)
+    queue.add(ready)
+    queue.add(morning, run_at=clock.now().replace(hour=5, minute=0))  # до 05:00
+    check("02:30 — очередь выдала только готовую транзакцию", stand.run() == ["tx08"])
+    rejected = ready.status == "failed" and len(queue) == 1
+    check("готовая отклонена, отложенная до 05:00 осталась ждать", rejected)
+    clock.set(4, 59, 59)
+    last = make(10, "deposit", 100, recipient=A1)
+    expect_refusal("04:59:59 — пополнение", NightOperationError, processor, last)
+    check("04:59:59 — отложенная ещё ждёт", stand.run() == [])
+    clock.set(5, 0)
+    check("05:00:00 — очередь исполняет отложенную", stand.run() == ["tx09"])
+    arrived = morning.status == "completed" and balance(A1) == 10000
+    check("отложенная выполнена, на счёте снова 10000.00", arrived)
+
+    journal = bank.get_suspicious_actions()
+    print("  Журнал подозрительных действий банка:")
+    for record in journal:
+        when, who = record["time"], record["client_id"]
+        print(f"    {when:%H:%M} | {record['action']} | {who} | {record['reason']}")
+    check("каждая ночная попытка помечена: восемь записей", len(journal) == 8)
+    owners = [record["client_id"] for record in journal]
+    expected = ["anna", "anna", "anna", "petr", "liwei", "anna", "anna", "anna"]
+    check("запись называет клиента: у пополнения это получатель", owners == expected)
+    kinds = {record["action"] for record in journal}
+    known = {"deposit", "withdrawal", "transfer", "external_transfer"}
+    check("запись называет тип транзакции", kinds == known)
+    reasons = " ".join(record["reason"] for record in journal)
+    check("в причинах нет полных номеров счетов", A1 not in reasons)
+    errors = processor.get_errors()
+    final = len(errors) == 8 and all(record["final"] for record in errors)
+    check("в журнале ошибок процессора те же восемь отказов, все окончательные", final)
+
+
 def main():
     parts = [
         show_transactions,
@@ -548,6 +622,7 @@ def main():
         show_conversion,
         show_retries,
         show_errors,
+        show_night,
     ]
     for part in parts:
         part()
@@ -563,4 +638,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-
