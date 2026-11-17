@@ -31,3 +31,7 @@ class ClientBlockedError(AccountError):
 
 class NightOperationError(AccountError):
     """Ночные часы: банк не выполняет операции."""
+
+
+class HighRiskError(AccountError):
+    """Операция заблокирована: анализатор оценил её риск как высокий."""

@@ -262,3 +262,7 @@ class Bank:
         if not isinstance(action, str) or not action.strip():
             raise InvalidOperationError("Проверка времени: нужно название операции.")
         self._check_time(action, self._owner_of(account_id), account_id)
+
+    def get_owner_id(self, account_id):
+        """ID клиента, которому открыт счёт. Счёта нет — None. Работает и ночью."""
+        return self._owner_of(account_id)

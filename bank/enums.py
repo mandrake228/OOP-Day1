@@ -46,3 +46,30 @@ class Priority(StrEnum):
     HIGH = "high"  # порядок строк здесь — это порядок обслуживания в очереди
     NORMAL = "normal"
     LOW = "low"
+
+
+class AuditLevel(StrEnum):
+    INFO = "info"  # обычное событие; строки идут от слабого к сильному
+    WARNING = "warning"  # предупреждение
+    ERROR = "error"  # ошибка
+    CRITICAL = "critical"  # критическое событие
+
+
+class AuditEvent(StrEnum):
+    RISK = "risk"  # оценка риска
+    COMPLETED = "completed"  # транзакция выполнена
+    REFUSED = "refused"  # отказ при исполнении
+    BLOCKED = "blocked"  # блокировка из-за высокого риска
+
+
+class RiskLevel(StrEnum):
+    LOW = "low"  # строки идут от низкого к высокому
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class RiskSignal(StrEnum):
+    LARGE_AMOUNT = "large_amount"  # крупная сумма
+    FREQUENT_OPERATIONS = "frequent_operations"  # частые операции
+    NEW_RECIPIENT = "new_recipient"  # перевод на новый счёт
+    NIGHT_OPERATION = "night_operation"  # операция ночью
