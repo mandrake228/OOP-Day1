@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from .bank import Bank
 from .enums import Currency, RiskLevel, RiskSignal, TransactionType
-from .errors import InvalidOperationError
+from .errors import DuplicateTransactionIdError, InvalidOperationError
 from .processor import TransactionProcessor, validate_exchange_rate
 from .transactions import Transaction
 
@@ -42,6 +42,7 @@ class RiskAnalyzer:
         self._bank = bank
         self._rates = table
         self._assessments = {}  # ID транзакции -> оценка
+        self._transactions = {}  # ID транзакции -> транзакция, которую оценили
         self._known = {}  # ID клиента -> множество знакомых ему получателей
 
     def _client_of(self, transaction):
@@ -83,7 +84,11 @@ class RiskAnalyzer:
             raise InvalidOperationError("Анализатор: нужен объект Transaction.")
         name = transaction.transaction_id
         if name in self._assessments:
-            return dict(self._assessments[name])  # оценка уже есть: не пересчитываем
+            if self._transactions[name] is not transaction:  # ID тот же, объект другой
+                raise DuplicateTransactionIdError(
+                    f"ID {name} уже занят другой транзакцией: нужен новый ID."
+                )
+            return dict(self._assessments[name])  # та же транзакция: та же оценка
         now = self._bank.now()
         client_id = self._client_of(transaction)
         amount_rub = transaction.amount * self._rates[transaction.currency]
@@ -106,6 +111,7 @@ class RiskAnalyzer:
         if new and level is not RiskLevel.HIGH:
             # получатель становится знакомым, если перевод не опасный
             self._known.setdefault(client_id, set()).add(transaction.recipient)
+        self._transactions[name] = transaction  # оценка принадлежит этому объекту
         self._assessments[name] = {
             "transaction_id": name,
             "client_id": client_id,

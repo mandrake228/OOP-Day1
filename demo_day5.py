@@ -11,6 +11,7 @@ from bank import (
     AuditLog,
     AuditReport,
     Bank,
+    DuplicateTransactionIdError,
     HighRiskError,
     InvalidOperationError,
     NightOperationError,
@@ -419,11 +420,49 @@ def blocking_at_night(stand):
           marks == [("withdrawal", "anna"), ("withdrawal", "anna")])
 
 
+def blocking_reused_id(stand):
+    print("  Чужой ID: оценку другой транзакции не выдают")
+    processor, analyzer, make = stand.processor, stand.analyzer, stand.make
+    before, risks = stand.balances(), len(stand.audit.filter(event="risk"))
+    night = make(3, "withdrawal", 100, sender=A1)  # ID как у tx03; на часах 02:30
+    expect_refusal("ночью с ID tx03 первым отказывает банк", NightOperationError,
+                   processor, night)
+    marks = [(m["action"], m["client_id"]) for m in stand.bank.get_suspicious_actions()]
+    check("попытка записана в журнал подозрительных действий банка",
+          marks[2:] == [("withdrawal", "anna")])
+
+    stand.clock.moment = at(12, day=17)
+    reused = make(3, "transfer", 70000, sender=P1, recipient=L1)  # снова ID tx03
+    expect_refusal("днём крупный перевод на новый счёт с ID tx03",
+                   DuplicateTransactionIdError, processor, reused)
+    check("статус failed, одна попытка",
+          (reused.status, reused.attempts) == ("failed", 1))
+    expect_error("анализатор не отдаёт оценку tx03 другой транзакции",
+                 DuplicateTransactionIdError, lambda: analyzer.assess(reused))
+    kept = [a["amount_rub"] for a in analyzer.get_assessments()
+            if a["transaction_id"] == "tx03"]
+    check("у tx03 одна оценка: пополнения на 500", kept == [Decimal("500")])
+    queued = make(2, "withdrawal", 90000, sender=P1)  # ID как у tx02
+    stand.queue.add(queued)
+    stand.run()
+    check("через очередь так же: отказ с первой попытки, очередь пуста",
+          (queued.status, queued.attempts, len(stand.queue)) == ("failed", 1, 0))
+    check("ни один счёт не изменился", stand.balances() == before)
+    check("записей об оценке риска не прибавилось",
+          len(stand.audit.filter(event="risk")) == risks)
+    errors = [r["data"]["error"] for r in stand.audit.filter(event="refused")]
+    check("в аудите три новых отказа: ночь и два чужих ID", errors[-3:] == [
+        "NightOperationError", "DuplicateTransactionIdError",
+        "DuplicateTransactionIdError",
+    ])
+
+
 def show_blocking():
     section("4. Блокировка опасных операций")
     stand = Stand()
     blocking_by_risk(stand)
     blocking_at_night(stand)
+    blocking_reused_id(stand)
     processor = stand.processor
     check("защищённый процессор — наследник процессора дня 4",
           isinstance(processor, TransactionProcessor))

@@ -2,7 +2,7 @@
 
 from .audit import AuditLog
 from .enums import AuditEvent, AuditLevel, RiskLevel, RiskSignal, TransactionStatus
-from .errors import HighRiskError, InvalidOperationError
+from .errors import DuplicateTransactionIdError, HighRiskError, InvalidOperationError
 from .processor import TransactionProcessor
 from .risk import RiskAnalyzer
 
@@ -52,17 +52,24 @@ class SecureProcessor(TransactionProcessor):
 
     def _execute(self, transaction):
         """Расширяет шаг предка: сначала оценка риска, опасное — блокировать."""
-        assessment = self._analyzer.assess(transaction)  # раньше всех проверок дня 4
+        try:
+            assessment = self._analyzer.assess(transaction)  # раньше проверок дня 4
+        except DuplicateTransactionIdError:
+            self._check_night(transaction)  # ночью первым откажет банк
+            raise  # днём — отказ анализатора: ID занят другой транзакцией
         if assessment["level"] is RiskLevel.HIGH:
-            # ночью банк откажет сам и пометит попытку, как любую ночную операцию
-            account_id = transaction.sender or transaction.recipient
-            action = transaction.transaction_type.value
-            self._bank.check_operation_time(action, account_id)
+            self._check_night(transaction)  # ночью первым откажет банк
             raise HighRiskError(
                 f"Транзакция {transaction.transaction_id} заблокирована: "
                 f"риск {describe(assessment)}."
             )
         return super()._execute(transaction)  # ночной запрет и все правила дня 4
+
+    def _check_night(self, transaction):
+        """Ночью банк откажет в любой операции и сам пометит попытку."""
+        account_id = transaction.sender or transaction.recipient
+        action = transaction.transaction_type.value
+        self._bank.check_operation_time(action, account_id)
 
     def _note(self, level, event, message, name, client_id, data):
         """Одна запись журнала аудита о транзакции. Время — по часам банка."""
@@ -75,9 +82,14 @@ class SecureProcessor(TransactionProcessor):
         """Расширяет попытку предка: после неё записывает в аудит, что вышло."""
         status = super().process(transaction)  # ошибки вызова вылетят здесь
         name = transaction.transaction_id
-        assessment = self._analyzer.assess(transaction)  # та же оценка, не новая
-        client_id = assessment["client_id"]
-        if transaction.attempts == 1:  # об оценке пишем один раз: при первой попытке
+        try:
+            assessment = self._analyzer.assess(transaction)  # та же оценка, не новая
+        except DuplicateTransactionIdError:
+            assessment = None  # ID занят другой транзакцией: своей оценки у неё нет
+        account_id = transaction.sender or transaction.recipient
+        client_id = self._bank.get_owner_id(account_id)  # тот же клиент, что в оценке
+        # об оценке пишем один раз, при первой попытке; нет оценки — нет и записи
+        if assessment is not None and transaction.attempts == 1:
             risk = {
                 "risk_level": assessment["level"],
                 "score": assessment["score"],

@@ -35,3 +35,7 @@ class NightOperationError(AccountError):
 
 class HighRiskError(AccountError):
     """Операция заблокирована: анализатор оценил её риск как высокий."""
+
+
+class DuplicateTransactionIdError(InvalidOperationError):
+    """ID транзакции уже занят другой транзакцией."""
