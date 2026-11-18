@@ -266,3 +266,10 @@ class Bank:
     def get_owner_id(self, account_id):
         """ID клиента, которому открыт счёт. Счёта нет — None. Работает и ночью."""
         return self._owner_of(account_id)
+
+    def check_client_active(self, client_id, action, account_id=None):
+        """Заблокированному клиенту отказывает и помечает обращение. Иначе молчит."""
+        if not isinstance(action, str) or not action.strip():
+            raise InvalidOperationError("Проверка клиента: нужно название операции.")
+        client = self._find_client(client_id)  # неизвестный клиент — ошибка
+        self._check_client_active(client, action, account_id)

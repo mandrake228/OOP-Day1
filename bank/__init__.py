@@ -35,6 +35,7 @@ from .queues import TransactionQueue
 from .reports import AuditReport
 from .risk import RiskAnalyzer
 from .secure import SecureProcessor
+from .system import BankSystem, ClientSession
 from .transactions import Transaction
 
 __all__ = [
@@ -51,8 +52,10 @@ __all__ = [
     "AuthenticationError",
     "Bank",
     "BankAccount",
+    "BankSystem",
     "Client",
     "ClientBlockedError",
+    "ClientSession",
     "ClientStatus",
     "Currency",
     "DuplicateTransactionIdError",

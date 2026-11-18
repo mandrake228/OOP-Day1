@@ -55,21 +55,15 @@ class SecureProcessor(TransactionProcessor):
         try:
             assessment = self._analyzer.assess(transaction)  # раньше проверок дня 4
         except DuplicateTransactionIdError:
-            self._check_night(transaction)  # ночью первым откажет банк
-            raise  # днём — отказ анализатора: ID занят другой транзакцией
+            self._check_bank_rules(transaction)  # первым отвечает банк
+            raise  # банк не отказал — отказ анализатора: ID занят
         if assessment["level"] is RiskLevel.HIGH:
-            self._check_night(transaction)  # ночью первым откажет банк
+            self._check_bank_rules(transaction)  # первым отвечает банк
             raise HighRiskError(
                 f"Транзакция {transaction.transaction_id} заблокирована: "
                 f"риск {describe(assessment)}."
             )
-        return super()._execute(transaction)  # ночной запрет и все правила дня 4
-
-    def _check_night(self, transaction):
-        """Ночью банк откажет в любой операции и сам пометит попытку."""
-        account_id = transaction.sender or transaction.recipient
-        action = transaction.transaction_type.value
-        self._bank.check_operation_time(action, account_id)
+        return super()._execute(transaction)  # правила банка и все правила дня 4
 
     def _note(self, level, event, message, name, client_id, data):
         """Одна запись журнала аудита о транзакции. Время — по часам банка."""

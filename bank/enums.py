@@ -60,6 +60,8 @@ class AuditEvent(StrEnum):
     COMPLETED = "completed"  # транзакция выполнена
     REFUSED = "refused"  # отказ при исполнении
     BLOCKED = "blocked"  # блокировка из-за высокого риска
+    QUEUED = "queued"  # транзакция принята в очередь
+    CANCELLED = "cancelled"  # транзакция отменена до исполнения
 
 
 class RiskLevel(StrEnum):

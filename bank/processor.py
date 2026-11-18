@@ -103,11 +103,18 @@ class TransactionProcessor:
         if account.status is AccountStatus.CLOSED:
             raise AccountClosedError(f"Счёт {role} {number} закрыт.")
 
+    def _check_bank_rules(self, transaction):
+        """Правила банка: ночной запрет и блокировка клиента. Банк сам помечает."""
+        account_id = transaction.sender or transaction.recipient
+        action = transaction.transaction_type.value
+        self._bank.check_operation_time(action, account_id)  # ночью — отказ
+        owner_id = self._bank.get_owner_id(account_id)
+        if owner_id is not None:  # счёта нет в банке — об этом скажет _find
+            self._bank.check_client_active(owner_id, action, account_id)
+
     def _execute(self, transaction):
         """Двигает деньги по счетам и возвращает комиссию. При отказе — ошибка."""
-        # время проверяет банк: ночью он откажет и сам пометит попытку
-        account_id = transaction.sender or transaction.recipient
-        self._bank.check_operation_time(transaction.transaction_type.value, account_id)
+        self._check_bank_rules(transaction)  # первым отвечает банк
         sender = recipient = debit = credit = None
         if transaction.sender is not None:
             sender = self._find(transaction.sender, "отправителя")
