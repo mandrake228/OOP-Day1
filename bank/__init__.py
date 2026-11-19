@@ -2,7 +2,7 @@
 
 from .accounts import AbstractAccount, BankAccount
 from .advanced import InvestmentAccount, PremiumAccount, SavingsAccount
-from .audit import AuditLog
+from .audit import AuditLog, AuditView
 from .bank import Bank
 from .clients import Client
 from .enums import (
@@ -32,6 +32,7 @@ from .errors import (
 )
 from .processor import TransactionProcessor
 from .queues import TransactionQueue
+from .reporting import ReportBuilder
 from .reports import AuditReport
 from .risk import RiskAnalyzer
 from .secure import SecureProcessor
@@ -49,6 +50,7 @@ __all__ = [
     "AuditLevel",
     "AuditLog",
     "AuditReport",
+    "AuditView",
     "AuthenticationError",
     "Bank",
     "BankAccount",
@@ -66,6 +68,7 @@ __all__ = [
     "NightOperationError",
     "PremiumAccount",
     "Priority",
+    "ReportBuilder",
     "RiskAnalyzer",
     "RiskLevel",
     "RiskSignal",

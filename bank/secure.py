@@ -5,6 +5,7 @@ from .enums import AuditEvent, AuditLevel, RiskLevel, RiskSignal, TransactionSta
 from .errors import DuplicateTransactionIdError, HighRiskError, InvalidOperationError
 from .processor import TransactionProcessor
 from .risk import RiskAnalyzer
+from .transactions import Transaction
 
 RISK_NAMES = {
     RiskLevel.LOW: "низкий",
@@ -72,8 +73,19 @@ class SecureProcessor(TransactionProcessor):
             client_id=client_id, transaction_id=name, data=data,
         )
 
+    def _balances(self, transaction):
+        """Балансы счетов транзакции в этом банке: номер -> баланс."""
+        if not isinstance(transaction, Transaction):
+            return {}  # ошибку вызова сообщит предок
+        return {
+            number: self._bank.get_account(number).balance
+            for number in (transaction.sender, transaction.recipient)
+            if self._bank.has_account(number)  # внешнего счёта в банке нет
+        }
+
     def process(self, transaction):
         """Расширяет попытку предка: после неё записывает в аудит, что вышло."""
+        before = self._balances(transaction)  # балансы до попытки
         status = super().process(transaction)  # ошибки вызова вылетят здесь
         name = transaction.transaction_id
         try:
@@ -93,7 +105,14 @@ class SecureProcessor(TransactionProcessor):
             message = f"Риск транзакции {name}: {describe(assessment)}."
             self._note(level, AuditEvent.RISK, message, name, client_id, risk)
         if status is TransactionStatus.COMPLETED:
-            done = {"attempt": transaction.attempts, "fee": transaction.fee}
+            after = self._balances(transaction)
+            moves = [  # отправитель, потом получатель; только изменившиеся
+                {"account_id": number, "before": before[number],
+                 "after": after[number]}
+                for number in after if before[number] != after[number]
+            ]
+            done = {"attempt": transaction.attempts, "fee": transaction.fee,
+                    "moves": moves}
             level, event = AuditLevel.INFO, AuditEvent.COMPLETED
             message = f"Транзакция {name} выполнена."
             self._note(level, event, message, name, client_id, done)

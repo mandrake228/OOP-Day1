@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from .accounts import BankAccount
 from .advanced import to_cents
-from .audit import AuditLog
+from .audit import AuditLog, AuditView
 from .bank import Bank
 from .enums import (
     AuditEvent,
@@ -30,6 +30,9 @@ TYPE_NAMES = {  # тип транзакции по-русски: для сооб
 }
 
 
+HIDDEN_REASON = "Перевод не выполнен. Причину видит отправитель."
+
+
 class BankSystem:
     """Вся система банка за одной дверью: приём, исполнение, кабинет, отчёты."""
 
@@ -40,6 +43,7 @@ class BankSystem:
             raise InvalidOperationError("Система: нужен объект Bank.")
         self._bank = bank
         self._audit = AuditLog(file_path=audit_file)
+        self._audit_view = AuditView(self._audit)  # наружу — только чтение
         self._analyzer = RiskAnalyzer(bank)  # курсы — те же, что у процессора
         self._processor = SecureProcessor(bank, self._analyzer, self._audit)
         self._queue = TransactionQueue()
@@ -52,7 +56,7 @@ class BankSystem:
 
     @property
     def audit(self):
-        return self._audit
+        return self._audit_view  # читать можно, дописать нельзя
 
     @property
     def report(self):
@@ -172,8 +176,14 @@ class BankSystem:
             })
         return waiting
 
-    def _to_rub(self, amount, currency):
+    def to_rub(self, amount, currency):
         """Сумма в рублях по курсам процессора, с округлением до копеек."""
+        currency = BankAccount._validate_choice(currency, Currency, "Валюта пересчёта")
+        if isinstance(amount, bool) or not isinstance(amount, (int, float, Decimal)):
+            raise InvalidOperationError("Пересчёт: сумма должна быть числом.")
+        amount = Decimal(str(amount))  # баланс бывает и отрицательным: знак любой
+        if not amount.is_finite():
+            raise InvalidOperationError("Пересчёт: сумма должна быть конечной.")
         rates = self._processor.rates  # копия таблицы курсов процессора
         return to_cents(amount * rates[currency] / rates[Currency.RUB])
 
@@ -184,17 +194,18 @@ class BankSystem:
         for currency in Currency:
             amount = self._bank.get_total_balance(currency=currency)  # правило дня 3
             by_currency[currency.value] = amount
-            total += self._to_rub(amount, currency)
+            total += self.to_rub(amount, currency)
         return {"by_currency": by_currency, "total_rub": total}
 
-    def _client_total_rub(self, client_id):
+    def client_total_rub(self, client_id):
         """Сумма на незакрытых счетах клиента в рублях: каждая валюта пересчитана."""
+        self._bank.get_client_info(client_id)  # неизвестный клиент — ошибка банка
         total = Decimal("0.00")
         for currency in Currency:
             amount = self._bank.get_total_balance(
                 currency=currency, client_id=client_id
             )
-            total += self._to_rub(amount, currency)
+            total += self.to_rub(amount, currency)
         return total
 
     def top_clients(self, count=3):
@@ -206,7 +217,7 @@ class BankSystem:
             rows.append({
                 "client_id": row["client_id"],
                 "full_name": row["full_name"],
-                "total_rub": self._client_total_rub(row["client_id"]),
+                "total_rub": self.client_total_rub(row["client_id"]),
             })
         rows.sort(key=lambda row: row["total_rub"], reverse=True)  # равные — на месте
         top = rows[:count]
@@ -231,8 +242,8 @@ class BankSystem:
                 by_risk[info["risk"]["level"].value] += 1
             if info["status"] == TransactionStatus.COMPLETED:
                 currency = Currency(info["currency"])
-                completed += self._to_rub(info["amount"], currency)
-                fees += self._to_rub(info["fee"], currency)
+                completed += self.to_rub(info["amount"], currency)
+                fees += self.to_rub(info["fee"], currency)
         return {
             "total": len(self._transactions),
             "by_status": by_status,
@@ -241,6 +252,41 @@ class BankSystem:
             "completed_rub": completed,
             "fees_rub": fees,
         }
+
+    def client_history(self, client_id, account_id=None):
+        """Операции по счетам клиента по порядку: направление, чужие номера скрыты."""
+        if not isinstance(client_id, str):  # None значил бы «все клиенты»
+            raise InvalidOperationError("История: ID клиента должен быть строкой.")
+        accounts = self._bank.search_accounts(client_id=client_id)
+        mine = {account.account_id for account in accounts}
+        if account_id is not None and (
+            not isinstance(account_id, str) or account_id not in mine
+        ):
+            raise InvalidOperationError("История: такого счёта у вас нет.")
+        chosen = mine if account_id is None else {account_id}
+        rows = []
+        for info in self.get_transactions(client_id=client_id):
+            out, came = info["sender"] in chosen, info["recipient"] in chosen
+            if not (out or came):
+                continue  # операция другого счёта клиента
+            info["direction"] = "own" if out and came else ("out" if out else "in")
+            foreign = info["sender"] is not None and info["sender"] not in mine
+            if foreign and info["failure_reason"] is not None:
+                info["failure_reason"] = HIDDEN_REASON  # в ней чужой остаток
+            for key in ("sender", "recipient"):
+                if info[key] is not None and info[key] not in mine:
+                    info[key] = mask(info[key])  # чужой номер: ****1234
+            rows.append(info)
+        return rows
+
+    def client_suspicious_operations(self, client_id):
+        """Операции клиента со средним и высоким риском, с отметкой о блокировке."""
+        if not isinstance(client_id, str):
+            raise InvalidOperationError("Отбор: ID клиента должен быть строкой.")
+        return [
+            row for row in self._report.suspicious_operations()
+            if row["client_id"] == client_id
+        ]
 
     def login(self, client_id, password):
         """Вход клиента в кабинет. Правила входа — банка, как в третьем дне."""
@@ -276,29 +322,10 @@ class ClientSession:
 
     def history(self, account_id=None):
         """Операции по счетам клиента по порядку: направление, чужие номера скрыты."""
-        self._check("view_history")
-        mine = {account.account_id for account in self._accounts()}
-        if account_id is not None and (
-            not isinstance(account_id, str) or account_id not in mine
-        ):
-            raise InvalidOperationError("История: такого счёта у вас нет.")
-        chosen = mine if account_id is None else {account_id}
-        rows = []
-        for info in self._system.get_transactions(client_id=self._client_id):
-            out, came = info["sender"] in chosen, info["recipient"] in chosen
-            if not (out or came):
-                continue  # операция другого счёта клиента
-            info["direction"] = "own" if out and came else ("out" if out else "in")
-            for key in ("sender", "recipient"):
-                if info[key] is not None and info[key] not in mine:
-                    info[key] = mask(info[key])  # чужой номер: ****1234
-            rows.append(info)
-        return rows
+        self._check("view_history")  # заблокированному — отказ, как раньше
+        return self._system.client_history(self._client_id, account_id)
 
     def suspicious_operations(self):
         """Операции клиента со средним и высоким риском, с отметкой о блокировке."""
         self._check("view_suspicious")
-        return [
-            row for row in self._system.report.suspicious_operations()
-            if row["client_id"] == self._client_id
-        ]
+        return self._system.client_suspicious_operations(self._client_id)

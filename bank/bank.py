@@ -273,3 +273,8 @@ class Bank:
             raise InvalidOperationError("Проверка клиента: нужно название операции.")
         client = self._find_client(client_id)  # неизвестный клиент — ошибка
         self._check_client_active(client, action, account_id)
+
+    def get_client_info(self, client_id):
+        """ID, ФИО и статус клиента для отчётов. Только чтение: работает и ночью."""
+        info = self._find_client(client_id).get_client_info()  # неизвестный — ошибка
+        return {key: info[key] for key in ("client_id", "full_name", "status")}

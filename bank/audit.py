@@ -1,5 +1,6 @@
 """Журнал аудита: записи о событиях банка в памяти и, если нужно, в файле."""
 
+import copy
 from pathlib import Path
 
 from .accounts import BankAccount
@@ -20,10 +21,8 @@ def optional_text(value, label):
 
 
 def copy_record(record):
-    """Копия записи: новый словарь записи и новый словарь данных."""
-    copy = dict(record)
-    copy["data"] = dict(record["data"])
-    return copy
+    """Копия записи на всю глубину: вложенные списки и словари тоже новые."""
+    return copy.deepcopy(record)
 
 
 class AuditLog:
@@ -76,7 +75,7 @@ class AuditLog:
             "message": message.strip(),
             "client_id": client_id,
             "transaction_id": transaction_id,
-            "data": dict(data),  # своя копия: снаружи данные журнала не изменить
+            "data": copy.deepcopy(data),  # своя копия на всю глубину
         }
         if self._file_path is not None:  # сначала файл: при сбое запись не добавится
             with open(self._file_path, "a", encoding="utf-8") as file:
@@ -140,3 +139,27 @@ class AuditLog:
     def _fits(wanted, actual):
         """Условие не задано или совпало."""
         return wanted is None or actual == wanted
+
+
+class AuditView:
+    """Журнал аудита только для чтения: те же записи, но дописать нельзя."""
+
+    def __init__(self, log):
+        if not isinstance(log, AuditLog):
+            raise InvalidOperationError("Просмотр журнала: нужен объект AuditLog.")
+        self._log = log
+
+    @property
+    def file_path(self):
+        return self._log.file_path
+
+    def __len__(self):
+        return len(self._log)
+
+    def get_records(self):
+        """Все записи копиями в порядке добавления."""
+        return self._log.get_records()
+
+    def filter(self, **conditions):
+        """Записи под условия журнала: те же условия, копии по порядку."""
+        return self._log.filter(**conditions)
